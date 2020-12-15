@@ -1,5 +1,4 @@
-/*
- * Bittern Cache.
+/* * Bittern Cache.
  *
  * Copyright(c) 2013, 2014, 2015, Twitter, Inc., All rights reserved.
  *
@@ -48,6 +47,16 @@ void pmem_deallocate_papi_mem(struct bittern_cache *bc)
 	M_ASSERT(pa->papi_interface == &cache_papi_mem);
 }
 
+static void init_dax_ctl(struct blk_dax_ctl *dax_ctl,
+			 uint64_t pmem_offset,
+			 size_t size)
+{
+	dax_ctl->sector = (pmem_offset & PAGE_MASK) / SECTOR_SIZE;
+	dax_ctl->size = PAGE_SIZE;
+	dax_ctl->addr = NULL;
+	dax_ctl->pfn = 0;
+}
+
 /*
  * sync read from cache.
  */
@@ -58,25 +67,25 @@ int pmem_read_sync_mem(struct bittern_cache *bc,
 	uint64_t ts_started = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
 	uint64_t end_offset = from_pmem_offset + size - 1;
-	void *dax_addr;
-	long dax_pfn, dax_ret;
+	long dax_ret;
+	struct blk_dax_ctl dax_ctl;
 
 	ASSERT(bc != NULL);
 	ASSERT(size > 0);
 
 	M_ASSERT((end_offset & PAGE_MASK) == (from_pmem_offset & PAGE_MASK));
 
-	dax_ret = bdev_direct_access(
-		pa->papi_bdev,
-		(from_pmem_offset & PAGE_MASK) / SECTOR_SIZE,
-		&dax_addr, &dax_pfn, PAGE_SIZE);
+	init_dax_ctl(&dax_ctl, from_pmem_offset, PAGE_SIZE);
+	dax_ret = bdev_direct_access(pa->papi_bdev, &dax_ctl);
 	M_ASSERT_FIXME(dax_ret == PAGE_SIZE);
+	M_ASSERT(dax_ctl.addr != NULL);
+	M_ASSERT(dax_ctl.pfn != 0);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, NULL, NULL,
-		     "from_pmem_offset=%llu, to_buffer=%p, size=%lu, dax_addr=%p, dax_pfn=%ld",
-		     from_pmem_offset, to_buffer, size, dax_addr, dax_pfn);
+		     "from_pmem_offset=%llu, to_buffer=%p, size=%lu, dax_ctl.addr=%p, dax_ctl.pfn=%ld",
+		     from_pmem_offset, to_buffer, size, dax_ctl.addr, dax_ctl.pfn);
 
-	memcpy(to_buffer, dax_addr + (from_pmem_offset % PAGE_SIZE), size);
+	memcpy(to_buffer, dax_ctl.addr + (from_pmem_offset % PAGE_SIZE), size);
 
 	if (size == PAGE_SIZE) {
 		atomic_dec(&pa->papi_stats.pmem_read_4k_pending);
@@ -98,8 +107,8 @@ int pmem_write_sync_mem(struct bittern_cache *bc,
 	uint64_t ts_started = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
 	uint64_t end_offset = to_pmem_offset + size - 1;
-	void *dax_addr;
-	long dax_pfn, dax_ret;
+	long dax_ret;
+	struct blk_dax_ctl dax_ctl;
 
 	ASSERT(bc != NULL);
 	ASSERT(size > 0);
@@ -114,17 +123,19 @@ int pmem_write_sync_mem(struct bittern_cache *bc,
 		atomic_inc(&pa->papi_stats.pmem_write_not4k_pending);
 	}
 
-	dax_ret = bdev_direct_access(
-		pa->papi_bdev,
-		(to_pmem_offset & PAGE_MASK) / SECTOR_SIZE,
-		&dax_addr, &dax_pfn, PAGE_SIZE);
+	init_dax_ctl(&dax_ctl, to_pmem_offset, PAGE_SIZE);
+	dax_ret = bdev_direct_access(pa->papi_bdev, &dax_ctl);
 	M_ASSERT_FIXME(dax_ret == PAGE_SIZE);
+	M_ASSERT(dax_ctl.addr != NULL);
+	M_ASSERT(dax_ctl.pfn != 0);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, NULL, NULL,
-		     "to_pmem_offset=%llu, from_buffer=%p, size=%lu, dax_addr=%p, dax_pfn=%ld",
-		     to_pmem_offset, from_buffer, size, dax_addr, dax_pfn);
+		     "to_pmem_offset=%llu, from_buffer=%p, size=%lu, dax_ctl.addr=%p, dax_ctl.pfn=%ld",
+		     to_pmem_offset, from_buffer, size, dax_ctl.addr, dax_ctl.pfn);
 
-	memcpy_nt(dax_addr + (to_pmem_offset % PAGE_SIZE), from_buffer, size);
+	memcpy_nt_off(dax_ctl.addr, to_pmem_offset % PAGE_SIZE,
+		      from_buffer, 0,
+		      size);
 
 	if (size == PAGE_SIZE) {
 		atomic_dec(&pa->papi_stats.pmem_write_4k_pending);
@@ -150,11 +161,11 @@ void pmem_metadata_async_write_mem(struct bittern_cache *bc,
 	struct pmem_block_metadata *pmbm;
 	struct pmem_api *pa = &bc->bc_papi;
 	uint64_t to_offset, end_offset;
-	void *dax_addr;
-	long dax_pfn, dax_ret;
 	struct data_buffer_info *dbi_data;
 	struct async_context *ctx;
 	unsigned int block_id;
+	long dax_ret;
+	struct blk_dax_ctl dax_ctl;
 
 	M_ASSERT(pmem_ctx != NULL);
 	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
@@ -208,17 +219,19 @@ void pmem_metadata_async_write_mem(struct bittern_cache *bc,
 	end_offset = to_offset + sizeof(*pmbm) - 1;
 	M_ASSERT((to_offset & PAGE_MASK) == (end_offset & PAGE_MASK));
 
-	dax_ret = bdev_direct_access(
-		pa->papi_bdev,
-		(to_offset & PAGE_MASK) / SECTOR_SIZE,
-		&dax_addr, &dax_pfn, PAGE_SIZE);
+	init_dax_ctl(&dax_ctl, to_offset, PAGE_SIZE);
+	dax_ret = bdev_direct_access(pa->papi_bdev, &dax_ctl);
 	M_ASSERT_FIXME(dax_ret == PAGE_SIZE);
+	M_ASSERT(dax_ctl.addr != NULL);
+	M_ASSERT(dax_ctl.pfn != 0);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
-		     "to_offset=%llu, dax_addr=%p, dax_pfn=%ld",
-		     to_offset, dax_addr, dax_pfn);
+		     "to_offset=%llu, dax_ctl.addr=%p, dax_ctl.pfn=%ld",
+		     to_offset, dax_ctl.addr, dax_ctl.pfn);
 
-	memcpy_nt(dax_addr + (to_offset % PAGE_SIZE), pmbm, sizeof(*pmbm));
+	memcpy_nt_off(dax_ctl.addr, to_offset % PAGE_SIZE,
+		      pmbm, 0,
+		      sizeof(*pmbm));
 
 	cache_timer_add(&pa->papi_stats.metadata_write_async_timer, ts_started);
 
@@ -258,13 +271,13 @@ void pmem_data_get_page_read_mem(struct bittern_cache *bc,
 {
 	uint64_t start_timer = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
-	void *cache_vaddr;
 	struct page *cache_page;
 	unsigned long from_offset;
-	long dax_pfn, dax_ret;
 	struct data_buffer_info *dbi_data;
 	struct async_context *ctx;
 	unsigned int block_id;
+	long dax_ret;
+	struct blk_dax_ctl dax_ctl;
 
 	M_ASSERT(pmem_ctx != NULL);
 	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
@@ -296,22 +309,22 @@ void pmem_data_get_page_read_mem(struct bittern_cache *bc,
 	from_offset = __cache_block_id_2_data_pmem_offset(bc, block_id);
 	ASSERT(from_offset % PAGE_SIZE == 0);
 
-	dax_ret = bdev_direct_access(
-		pa->papi_bdev,
-		from_offset / SECTOR_SIZE,
-		&cache_vaddr, &dax_pfn, PAGE_SIZE);
+	init_dax_ctl(&dax_ctl, from_offset, PAGE_SIZE);
+	dax_ret = bdev_direct_access(pa->papi_bdev, &dax_ctl);
 	M_ASSERT_FIXME(dax_ret == PAGE_SIZE);
+	M_ASSERT(dax_ctl.addr != NULL);
+	M_ASSERT(dax_ctl.pfn != 0);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
-		     "from_offset=%lu, dax_addr=%p, dax_pfn=%ld",
-		     from_offset, cache_vaddr, dax_pfn);
+		     "from_offset=%lu, dax_ctl.addr=%p, dax_ctl.pfn=%ld",
+		     from_offset, dax_ctl.addr, dax_ctl.pfn);
 
-	cache_page = pfn_to_page(dax_pfn);
-	ASSERT(cache_vaddr != NULL);
+	cache_page = pfn_to_page(dax_ctl.pfn);
+	ASSERT(dax_ctl.addr != NULL);
 	ASSERT(cache_page != NULL);
 	pmem_set_dbi(dbi_data,
 		     CACHE_DI_FLAGS_PMEM_READ,
-		     cache_vaddr,
+		     dax_ctl.addr,
 		     cache_page);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "di_buffer_vmalloc=%p, di_buffer=%p, di_page=%p, di_flags=0x%x, callback_context=%p, callback_function=%p",
@@ -460,15 +473,15 @@ void pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
 				       struct cache_block *to_cache_block,
 				       struct pmem_context *pmem_ctx)
 {
-	void *to_buffer;
 	struct page *to_page;
 	struct pmem_api *pa = &bc->bc_papi;
 	unsigned long to_offset;
-	long dax_pfn, dax_ret;
 	struct data_buffer_info *dbi_data;
 	struct async_context *ctx;
 	unsigned int from_block_id;
 	unsigned int to_block_id;
+	long dax_ret;
+	struct blk_dax_ctl dax_ctl;
 
 	M_ASSERT(pmem_ctx != NULL);
 	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
@@ -512,32 +525,34 @@ void pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
 	to_offset = __cache_block_id_2_data_pmem_offset(bc, to_block_id);
 	ASSERT(to_offset % PAGE_SIZE == 0);
 
-	dax_ret = bdev_direct_access(
-		pa->papi_bdev,
-		to_offset / SECTOR_SIZE,
-		&to_buffer, &dax_pfn, PAGE_SIZE);
+	init_dax_ctl(&dax_ctl, to_offset, PAGE_SIZE);
+	dax_ret = bdev_direct_access(pa->papi_bdev, &dax_ctl);
 	M_ASSERT_FIXME(dax_ret == PAGE_SIZE);
+	M_ASSERT(dax_ctl.addr != NULL);
+	M_ASSERT(dax_ctl.pfn != 0);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, to_cache_block, NULL, NULL,
-		     "to_offset=%lu, dax_addr=%p, dax_pfn=%ld",
-		     to_offset, &to_buffer, dax_pfn);
+		     "to_offset=%lu, dax_ctl.addr=%p, dax_ctl.pfn=%ld",
+		     to_offset, &dax_ctl.addr, dax_ctl.pfn);
 
-	to_page = pfn_to_page(dax_pfn);
-	ASSERT(to_buffer != NULL);
+	to_page = pfn_to_page(dax_ctl.pfn);
+	ASSERT(dax_ctl.addr != NULL);
 	ASSERT(to_page != NULL);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, to_cache_block, NULL, NULL,
 		     "copying to_cache_block from %p to %p",
-		     dbi_data->di_buffer, to_buffer);
+		     dbi_data->di_buffer, dax_ctl.addr);
 
 	/*
 	 * there is no double buffering, so we actually need to copy the buffer
 	 * FIXME: need a PMEM memcpy api which exposes both dest and source
 	 */
-	memcpy_nt(to_buffer, dbi_data->di_buffer, PAGE_SIZE);
+	memcpy_nt(dax_ctl.addr,
+		  dbi_data->di_buffer,
+		  PAGE_SIZE);
 	/*
 	 * update buffer pointers
 	 */
-	dbi_data->di_buffer = to_buffer;
+	dbi_data->di_buffer = dax_ctl.addr;
 	dbi_data->di_page = to_page;
 
 	dbi_data->di_flags |= CACHE_DI_FLAGS_PMEM_WRITE;
@@ -565,13 +580,13 @@ void pmem_data_get_page_write_mem(struct bittern_cache *bc,
 {
 	uint64_t start_timer = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
-	void *cache_vaddr;
 	struct page *cache_page;
 	unsigned long to_offset;
-	long dax_pfn, dax_ret;
 	struct data_buffer_info *dbi_data;
 	struct async_context *ctx;
 	unsigned int block_id;
+	long dax_ret;
+	struct blk_dax_ctl dax_ctl;
 
 	M_ASSERT(pmem_ctx != NULL);
 	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
@@ -598,22 +613,22 @@ void pmem_data_get_page_write_mem(struct bittern_cache *bc,
 	to_offset = __cache_block_id_2_data_pmem_offset(bc, block_id);
 	ASSERT(to_offset % PAGE_SIZE == 0);
 
-	dax_ret = bdev_direct_access(
-		pa->papi_bdev,
-		to_offset / SECTOR_SIZE,
-		&cache_vaddr, &dax_pfn, PAGE_SIZE);
+	init_dax_ctl(&dax_ctl, to_offset, PAGE_SIZE);
+	dax_ret = bdev_direct_access(pa->papi_bdev, &dax_ctl);
 	M_ASSERT_FIXME(dax_ret == PAGE_SIZE);
+	M_ASSERT(dax_ctl.addr != NULL);
+	M_ASSERT(dax_ctl.pfn != 0);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
-		     "to_offset=%lu, dax_addr=%p, dax_pfn=%ld",
-		     to_offset, &cache_vaddr, dax_pfn);
+		     "to_offset=%lu, dax_ctl.addr=%p, dax_ctl.pfn=%ld",
+		     to_offset, &dax_ctl.addr, dax_ctl.pfn);
 
-	cache_page = pfn_to_page(dax_pfn);
-	ASSERT(cache_vaddr != NULL);
+	cache_page = pfn_to_page(dax_ctl.pfn);
+	ASSERT(dax_ctl.addr != NULL);
 	ASSERT(cache_page != NULL);
 	pmem_set_dbi(dbi_data,
 		     CACHE_DI_FLAGS_PMEM_WRITE,
-		     cache_vaddr,
+		     dax_ctl.addr,
 		     cache_page);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "di_buffer_vmalloc=%p, di_buffer=%p, di_page=%p, di_flags=0x%x",
@@ -708,9 +723,9 @@ void pmem_data_put_page_write_mem(struct bittern_cache *bc,
 	 */
 	{
 		uint64_t to_offset, end_offset;
-		void *to_buffer;
-		long dax_pfn, dax_ret;
 		struct pmem_block_metadata *pmbm = &pmem_ctx->pmbm;
+		long dax_ret;
+		struct blk_dax_ctl dax_ctl;
 
 		ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 		memset(pmbm, 0, sizeof(*pmbm));
@@ -728,19 +743,19 @@ void pmem_data_put_page_write_mem(struct bittern_cache *bc,
 		end_offset = to_offset + sizeof(*pmbm) - 1;
 		M_ASSERT((end_offset & PAGE_MASK) == (to_offset & PAGE_MASK));
 
-		dax_ret = bdev_direct_access(
-			pa->papi_bdev,
-			(to_offset & PAGE_MASK) / SECTOR_SIZE,
-			&to_buffer, &dax_pfn, PAGE_SIZE);
+		init_dax_ctl(&dax_ctl, to_offset, PAGE_SIZE);
+		dax_ret = bdev_direct_access(pa->papi_bdev, &dax_ctl);
 		M_ASSERT_FIXME(dax_ret == PAGE_SIZE);
+		M_ASSERT(dax_ctl.addr != NULL);
+		M_ASSERT(dax_ctl.pfn != 0);
 
 		BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
-			     "to_offset=%llu, dax_addr=%p, dax_pfn=%ld",
-			     to_offset, &to_buffer, dax_pfn);
+			     "to_offset=%llu, dax_ctl.addr=%p, dax_ctl.pfn=%ld",
+			     to_offset, dax_ctl.addr, dax_ctl.pfn);
 
-		memcpy_nt(to_buffer + (to_offset % PAGE_SIZE),
-			  pmbm,
-			  sizeof(struct pmem_block_metadata));
+		memcpy_nt_off(dax_ctl.addr, to_offset % PAGE_SIZE,
+			      pmbm, 0,
+			      sizeof(struct pmem_block_metadata));
 
 		cache_timer_add(&pa->papi_stats.
 					metadata_write_async_timer,

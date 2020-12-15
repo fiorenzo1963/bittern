@@ -15,7 +15,9 @@
 #
 COMMIT_REV ?= $(shell git describe  --always --abbrev=12)
 KERNEL_SOURCE_VERSION ?= $(shell uname -r)
-KERNEL_TREE ?= /lib/modules/$(KERNEL_SOURCE_VERSION)/build
+#KERNEL_TREE ?= /lib/modules/$(KERNEL_SOURCE_VERSION)/build
+#KERNEL_TREE ?= /usr/src/kernels/linux-4.14.35-2025.403.3.el7uek
+KERNEL_TREE ?= /usr/src/kernels/linux-4.1.12-124.45.6.el7uek
 
 EXTRA_CFLAGS += -I$(KERNEL_TREE)/drivers/md -I./ -DCOMMIT_REV="\"$(COMMIT_REV)\""
 EXTRA_CFLAGS += -I$(KERNEL_TREE)/include/ \

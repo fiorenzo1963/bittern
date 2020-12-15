@@ -62,5 +62,9 @@
 
 extern const char *memcpy_nt_type;
 extern void memcpy_nt(void *dst, void *src, size_t len);
+static inline void memcpy_nt_off(void *dst, long dst_off, void *src, long src_off, size_t len)
+{
+	memcpy_nt(dst + dst_off, src + src_off, len);
+}
 
 #endif /*__MEMCPY_NT__*/

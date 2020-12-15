@@ -208,27 +208,27 @@ sub do_stats {
 	#
 	# queued requests
 	#
-	$s_hdr0 .= sprintf("%10s" . $s_spaces, str_pad_dashes("bittern", 10));
-	$s_hdr .= sprintf("%10s" . $s_spaces, "device");
-	$s_val .= sprintf("%10s" . $s_spaces, $cache_name);
+	#$s_hdr0 .= sprintf("%10s" . $s_spaces, str_pad_dashes("bittern", 10));
+	#$s_hdr .= sprintf("%10s" . $s_spaces, "device");
+	#$s_val .= sprintf("%10s" . $s_spaces, $cache_name);
 	#
 	# inflight
 	#
-	$s_hdr0 .= sprintf("%13s" . $s_spaces, str_pad_dashes("inflight", 13));
-	$s_hdr .= sprintf("%6s %6s" . $s_spaces, "defer", "pend");
-	$s_val .= sprintf("%6d %6d" . $s_spaces,
-			  $stats->{c}->{deferred_requests},
-			  $stats->{c}->{pending_requests});
+	#$s_hdr0 .= sprintf("%11s" . $s_spaces, str_pad_dashes("inflight", 11));
+	#$s_hdr .= sprintf("%5s %5s" . $s_spaces, "defer", "pend");
+	#$s_val .= sprintf("%5d %5d" . $s_spaces,
+	#		  $stats->{c}->{deferred_requests},
+	#		  $stats->{c}->{pending_requests});
 	#
-	# completed
+	# cache
 	#
-	$s_hdr0 .= sprintf("%27s" . $s_spaces, str_pad_dashes("completed", 27));
-	$s_hdr .= sprintf("%6s %6s %6s %6s" . $s_spaces,
+	$s_hdr0 .= sprintf("%23s" . $s_spaces, str_pad_dashes("cache-i/o", 23));
+	$s_hdr .= sprintf("%5s %5s %5s %5s" . $s_spaces,
 			  "reads",
-			  "writes",
-			  "wrback",
-			  "invals");
-	$s_val .= sprintf("%6d %6d %6d %6d" . $s_spaces,
+			  "wrtes",
+			  "wrbck",
+			  "invls");
+	$s_val .= sprintf("%5d %5d %5d %5d" . $s_spaces,
 			  $stats_extra->{d}->{completed_read_requests},
 			  $stats_extra->{d}->{completed_write_requests},
 			  $stats_extra->{d}->{completed_writebacks},
@@ -240,9 +240,9 @@ sub do_stats {
 		      $stats->{d}->{dirty_read_hits};
 	my($w_hits) = $stats->{d}->{clean_write_hits} +
 		      $stats->{d}->{dirty_write_hits};
-	$s_hdr0 .= sprintf("%15s" . $s_spaces, str_pad_dashes("hits", 15));
-	$s_hdr .= sprintf("%7s %7s" . $s_spaces, "r-hits", "w-hits");
-	$s_val .= sprintf("%7d %7d" . $s_spaces,
+	$s_hdr0 .= sprintf("%11s" . $s_spaces, str_pad_dashes("hits", 11));
+	$s_hdr .= sprintf("%5s %5s" . $s_spaces, "r-hit", "w-hit");
+	$s_val .= sprintf("%5d %5d" . $s_spaces,
 			  $r_hits,
 			  $w_hits);
 	#
@@ -251,14 +251,14 @@ sub do_stats {
 	my($pct_f) = ($stats->{c}->{valid_dirty_cache_entries} * 100) /
 		     $stats->{c}->{total_entries};
 	my($pct_s) = sprintf("%3.2f%%", $pct_f);
-	$s_hdr0 .= sprintf("%34s" . $s_spaces,
-			   str_pad_dashes("cache-blocks", 34));
-	$s_hdr .= sprintf("%8s %8s %8s %7s" . $s_spaces,
+	$s_hdr0 .= sprintf("%31s" . $s_spaces,
+			   str_pad_dashes("cache-blocks", 31));
+	$s_hdr .= sprintf("%7s %7s %7s %7s" . $s_spaces,
 			  "inval",
 			  "clean",
 			  "dirty",
 			  "dirty%");
-	$s_val .= sprintf("%8d %8d %8d %7s" . $s_spaces,
+	$s_val .= sprintf("%7d %7d %7d %7s" . $s_spaces,
 			  $stats->{c}->{invalid_cache_entries},
 			  $stats->{c}->{valid_clean_cache_entries},
 			  $stats->{c}->{valid_dirty_cache_entries},
@@ -266,14 +266,14 @@ sub do_stats {
 	#
 	# disk access
 	#
-	$s_hdr0 .= sprintf("%27s" . $s_spaces,
-			   str_pad_dashes("cached-device", 27));
-	$s_hdr .= sprintf("%6s %6s %6s %6s" . $s_spaces,
+	$s_hdr0 .= sprintf("%23s" . $s_spaces,
+			   str_pad_dashes("cached-device", 23));
+	$s_hdr .= sprintf("%5s %5s %5s %5s" . $s_spaces,
 			  "rd",
 			  "wr",
 			  "rdseq",
 			  "wrseq");
-	$s_val .= sprintf("%6d %6d %6d %6d" . $s_spaces,
+	$s_val .= sprintf("%5d %5d %5d %5d" . $s_spaces,
 			  $stats->{d}->{read_cached_device_requests},
 			  $stats->{d}->{write_cached_device_requests},
 			  $stats_extra->{d}->{read_sequential_bypass_count},

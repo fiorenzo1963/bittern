@@ -76,7 +76,8 @@
  * Bittern is really tuned towards caching writes, tuning of this parameter
  * is probably not very critical.
  */
-#define SEQ_IO_THRESHOLD_COUNT_READ_DEFAULT	KBYTES_TO_SECTORS(128)
+//#define SEQ_IO_THRESHOLD_COUNT_READ_DEFAULT	KBYTES_TO_SECTORS(128)
+#define SEQ_IO_THRESHOLD_COUNT_READ_DEFAULT	KBYTES_TO_SECTORS(512)
 /*!
  * Default disk sectors threshold after which we consider the IO stream
  * to be sequential write.
@@ -108,7 +109,8 @@
  * between 1.5 Mbytes and 50 Mbytes, and hope that it will work correctly
  * for most workloads.
  */
-#define SEQ_IO_THRESHOLD_COUNT_WRITE_DEFAULT	KBYTES_TO_SECTORS(8000)
+//#define SEQ_IO_THRESHOLD_COUNT_WRITE_DEFAULT	KBYTES_TO_SECTORS(8000)
+#define SEQ_IO_THRESHOLD_COUNT_WRITE_DEFAULT	KBYTES_TO_SECTORS(128000)
 /*!
  * Maximum disk sectors threshold after which we consider the IO stream
  * to be sequential.

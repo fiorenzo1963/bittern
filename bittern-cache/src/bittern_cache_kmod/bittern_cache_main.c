@@ -254,9 +254,11 @@ void bio_copy_to_cache(struct work_item *wi,
 		/*
 		 * use non-temporal writes - required for NVDIMM-type hardware.
 		 */
-		memcpy_nt(cache_vaddr + cache_block_copy_offset + biovec_offset,
-			  bi_kaddr + bvec.bv_offset,
-			  bvec.bv_len);
+		memcpy_nt_off(cache_vaddr,
+			      cache_block_copy_offset + biovec_offset,
+			      bi_kaddr,
+			      bvec.bv_offset,
+			      bvec.bv_len);
 
 		ASSERT(bvec.bv_offset <= PAGE_SIZE);
 		ASSERT(bvec.bv_offset + bvec.bv_len <= PAGE_SIZE);

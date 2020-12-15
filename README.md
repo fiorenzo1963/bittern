@@ -1,5 +1,15 @@
+Bittern Beta Release 0.3 Release Notes
+--------------------------------------
+
+* Linux Kernel
+	* 4.1.12 (minor DAX api changes)
+* Operating System
+	* CentOS or Oracle UEK
+
 Bittern Beta Release 0.27.1 Release Notes
 -----------------------------------------
+
+Original source code: https://github.com/twitter-archive/bittern
 
 To get started with Bittern, you will need the following:
 
