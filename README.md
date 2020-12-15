@@ -1,3 +1,16 @@
+Bittern Beta Release 0.4 Release Notes
+-----------------------------------------
+
+This version of bittern has been cloned from Bittern 0.27.1 from Twitter's open source repo https://github.com/twitter-archive/bittern
+
+* Operating System
+	* RHEL compatible OS like CentOS or Oracle UEK
+* Linux kernel
+	* 4.14.35-2025.403.3.el7uek
+* Doxygen
+	* 1.8.9.1 or later
+* Graphviz
+
 Bittern Beta Release 0.27.1 Release Notes
 -----------------------------------------
 
