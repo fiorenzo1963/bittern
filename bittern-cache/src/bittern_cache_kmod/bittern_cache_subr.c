@@ -99,6 +99,26 @@ DEFINE_SPINLOCK(cache_trace_spinlock);
 #define BT_PTR(__p)
 #endif /*BITTERN_TRACE_POINTERS */
 
+char bio_op_to_char(struct bio *bio)
+{
+	switch (bio_op(bio)) {
+	case REQ_OP_READ: return 'R';
+	case REQ_OP_WRITE: return 'W';
+	case REQ_OP_FLUSH: return 'F';
+	case REQ_OP_DISCARD: return 'D';
+	case REQ_OP_SECURE_ERASE: return 'E';
+	case REQ_OP_WRITE_SAME: return 'S';
+	case REQ_OP_WRITE_ZEROES: return 'Z';
+	case REQ_OP_ZONE_REPORT: return '4';
+	case REQ_OP_ZONE_RESET: return '6';
+	case REQ_OP_SCSI_IN: return '7';
+	case REQ_OP_SCSI_OUT: return '8';
+	case REQ_OP_DRV_IN: return '9';
+	case REQ_OP_DRV_OUT: return 'a';
+	}
+	return '?';
+}
+
 void cache_trace(int level,
 		 struct bittern_cache *bc,
 		 struct work_item *wi,
@@ -154,7 +174,7 @@ void cache_trace(int level,
 		snprintf(o_bio_buf, sizeof(o_bio_buf),
 			 " o_bio(" BT_FMT_PTR "%c,%lu:%d,%d/%d,%d:%d)",
 			 BT_PTR(original_bio)
-			 (bio_data_dir(original_bio) == WRITE ? 'W' : 'R'),
+			 bio_op_to_char(original_bio),
 			 original_bio->bi_iter.bi_sector,
 			 original_bio->bi_iter.bi_size,
 			 original_bio->bi_iter.bi_idx, original_bio->bi_vcnt,

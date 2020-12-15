@@ -17,6 +17,7 @@
 /*! \file */
 
 #include "bittern_cache.h"
+#include "sched/signal.h"
 
 /*! \todo does this really belong here and not in cache_getput ? */
 void cache_invalidate_block_io_end(struct bittern_cache *bc,

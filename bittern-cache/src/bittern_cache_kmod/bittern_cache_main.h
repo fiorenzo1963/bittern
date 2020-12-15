@@ -309,13 +309,13 @@ work_item_add_pending_io(struct bittern_cache *bc,
 			 struct work_item *wi,
 			 const char *op_type,
 			 sector_t op_sector,
-			 unsigned long op_rw)
+			 unsigned long bi_opf)
 {
 	unsigned long flags;
 
 	wi->wi_op_type = op_type;
 	wi->wi_op_sector = op_sector;
-	wi->wi_op_rw = op_rw;
+	wi->wi_bi_opf = bi_opf;
 	spin_lock_irqsave(&bc->bc_entries_lock, flags);
 	list_add_tail(&wi->wi_pending_io_list, &bc->bc_pending_requests_list);
 	spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
@@ -353,16 +353,23 @@ extern void queue_to_deferred(struct bittern_cache *bc,
 extern struct bio *dequeue_from_deferred(struct bittern_cache *bc,
 					       struct deferred_queue *queue);
 
+static inline bool bio_is_flush_request(struct bio *bio)
+{
+	if (op_is_flush(bio->bi_opf))
+		return true;
+	return false;
+}
+
 static inline bool bio_is_pureflush_request(struct bio *bio)
 {
-	if ((bio->bi_rw & REQ_FLUSH) != 0 && bio->bi_iter.bi_size == 0)
+	if (op_is_flush(bio->bi_opf) && bio->bi_iter.bi_size == 0)
 		return true;
 	return false;
 }
 
 static inline bool bio_is_discard_request(struct bio *bio)
 {
-	if ((bio->bi_rw & REQ_DISCARD) != 0)
+	if (bio_op(bio) == REQ_OP_DISCARD)
 		return true;
 	return false;
 }
@@ -375,13 +382,19 @@ static inline bool bio_is_pureflush_or_discard_request(struct bio *bio)
 
 static inline bool bio_is_data_request(struct bio *bio)
 {
-	return !bio_is_pureflush_or_discard_request(bio);
+	return bio_has_data(bio);
+}
+
+static inline bool bio_is_write(struct bio *bio)
+{
+	/* UGLY !!!!!!!!!!!!! */
+	return bio->bi_opf & 01;
 }
 
 /*! cached device generic callback */
 extern void cached_dev_make_request_endio(struct work_item *wi,
 					  struct bio *bio,
-					  int err);
+					  int bi_status);
 /*!
  * Do generic_make_request() immediately.
  * Can only be called in a sleepable context.
@@ -401,7 +414,7 @@ extern void cached_dev_make_request_defer(struct bittern_cache *bc,
 /*! main state machine */
 extern void cache_state_machine(struct bittern_cache *bc,
 				struct work_item *wi,
-				int err);
+				int bi_status);
 
 /*! copy from cache to bio, aka userland reads */
 extern void __bio_copy_from_cache(struct work_item *wi,
@@ -420,17 +433,17 @@ extern void cache_get_page_read_callback(struct bittern_cache *bc,
 					 struct cache_block *cache_block,
 					 struct pmem_context *pmem_ctx,
 					 void *callback_context,
-					 int err);
+					 int bi_status);
 extern void cache_put_page_write_callback(struct bittern_cache *bc,
 					  struct cache_block *cache_block,
 					  struct pmem_context *pmem_ctx,
 					  void *callback_context,
-					  int err);
+					  int bi_status);
 extern void cache_metadata_write_callback(struct bittern_cache *bc,
 					  struct cache_block *cache_block,
 					  struct pmem_context *pmem_ctx,
 					  void *callback_context,
-					  int err);
+					  int bi_status);
 
 /*
  * read path state machine functions
@@ -439,15 +452,15 @@ extern void sm_read_hit_copy_from_cache_start(struct bittern_cache *bc,
 					      struct work_item *wi);
 extern void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 					    struct work_item *wi,
-					    int err);
+					    int bi_status);
 extern void sm_read_miss_copy_from_device_start(struct bittern_cache *bc,
 						struct work_item *wi);
 extern void sm_read_miss_copy_from_device_end(struct bittern_cache *bc,
 					      struct work_item *wi,
-					      int err);
+					      int bi_status);
 extern void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 					   struct work_item *wi,
-					   int err);
+					   int bi_status);
 
 /*
  * bgwriter callback, called by state machine
@@ -462,15 +475,15 @@ extern void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 						    struct work_item *wi);
 extern void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 						  struct work_item *wi,
-						  int err);
+						  int bi_status);
 extern void sm_clean_write_miss_copy_to_device_start(struct bittern_cache *bc,
 						     struct work_item *wi);
 extern void sm_clean_write_miss_copy_to_device_end(struct bittern_cache *bc,
 						   struct work_item *wi,
-						   int err);
+						   int bi_status);
 extern void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 						  struct work_item *wi,
-						  int err);
+						  int bi_status);
 
 /*
  * writeback path state machine functions
@@ -479,13 +492,13 @@ extern void sm_writeback_copy_from_cache_start(struct bittern_cache *bc,
 					       struct work_item *wi);
 extern void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 					     struct work_item *wi,
-					     int err);
+					     int bi_status);
 extern void sm_writeback_copy_to_device_end(struct bittern_cache *bc,
 					    struct work_item *wi,
-					    int err);
+					    int bi_status);
 extern void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 					     struct work_item *wi,
-					     int err);
+					     int bi_status);
 
 /*
  * write path - partial write hit
@@ -505,11 +518,11 @@ sm_dirty_write_hit_copy_to_cache_start(struct bittern_cache *bc,
 extern void
 sm_dirty_pwrite_hit_copy_to_cache_start(struct bittern_cache *bc,
 					struct work_item *wi,
-					int err);
+					int bi_status);
 extern void
 sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 				     struct work_item *wi,
-				     int err);
+				     int bi_status);
 
 /*
  * write path - partial write miss
@@ -520,15 +533,15 @@ sm_pwrite_miss_copy_from_device_start(struct bittern_cache *bc,
 extern void
 sm_pwrite_miss_copy_from_device_end(struct bittern_cache *bc,
 				    struct work_item *wi,
-				    int err);
+				    int bi_status);
 extern void
 sm_pwrite_miss_copy_to_device_end(struct bittern_cache *bc,
 				    struct work_item *wi,
-				    int err);
+				    int bi_status);
 extern void
 sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 				 struct work_item *wi,
-				 int err);
+				 int bi_status);
 
 /*
  * invalidate callback, called by state machine
@@ -545,7 +558,7 @@ sm_invalidate_start(struct bittern_cache *bc,
 extern void
 sm_invalidate_end(struct bittern_cache *bc,
 		  struct work_item *wi,
-		  int err);
+		  int bi_status);
 
 extern int
 __cache_verify_hash_data_ret(struct bittern_cache *bc,

@@ -42,15 +42,25 @@
 #define RB_NON_EMPTY_NODE(__node) (!RB_EMPTY_NODE(__node))
 #define RB_NON_EMPTY_ROOT(__root) (!RB_EMPTY_ROOT(__root))
 
+/* yiikes! */
 /*
- * not using constants totally sucks, but this is how bio_data_dir works
- */
-#define bio_set_data_dir_write(__bio) ((__bio)->bi_rw |= 1)
-#define bio_set_data_dir_read(__bio) ((__bio)->bi_rw &= ~1)
-#define data_dir_read(__bi_rw) (((__bi_rw) & 1) == READ)
-#define data_dir_write(__bi_rw) (((__bi_rw) & 1) == WRITE)
-#define bio_data_dir_read(__bio) (((__bio)->bi_rw & 1) == READ)
-#define bio_data_dir_write(__bio) (((__bio)->bi_rw & 1) == WRITE)
+static inline void bio_set_op_attrs(struct bio *bio, int op, int attrs)
+{
+	bio->bi_opf = op | attrs;
+}
+*/
+
+/* yiikes! */
+static inline void bio_set_op_keep_attrs(struct bio *bio, int op)
+{
+	bio->bi_opf = (op & REQ_OP_MASK) | (bio->bi_opf & ~REQ_OP_MASK);
+}
+
+/* yiikes! */
+static inline void bio_set_attrs_keep_op(struct bio *bio, int attrs)
+{
+	bio->bi_opf = (bio->bi_opf & REQ_OP_MASK) | attrs;
+}
 
 /*!
  * Atomically compares "new" with "v".
@@ -92,7 +102,9 @@ static inline void atomic64_set_if_higher(atomic64_t *v, long long new)
  * why linux does not define sector size and yet it uses 512 and
  * its corresponding 9 shift everywhere?
  */
+#if !defined(SECTOR_SIZE)
 #define SECTOR_SIZE 512
+#endif
 
 /*! converts kbytes to sectors */
 #define KBYTES_TO_SECTORS(__kb) (((__kb) * 1024) / SECTOR_SIZE)

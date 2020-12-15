@@ -22,13 +22,12 @@
  * handle completions which do not go thru the cache state machine
  * in this case we do not have a cache block
  */
-void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
+void cached_dev_bypass_endio(struct bio *cloned_bio)
 {
 	struct bittern_cache *bc;
 	struct bio *original_bio;
 	struct work_item *wi;
 
-	M_ASSERT_FIXME(err == 0);
 	ASSERT(cloned_bio != NULL);
 	wi = cloned_bio->bi_private;
 	ASSERT(wi != NULL);
@@ -47,6 +46,8 @@ void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, cloned_bio, NULL,
 		 "bypass_complete");
+
+	original_bio->bi_status = cloned_bio->bi_status;
 
 	/* we no longer need the cloned bio */
 	bio_put(cloned_bio);
@@ -82,7 +83,7 @@ void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 	work_item_free(bc, wi);
 
 	/* all done */
-	bio_endio(original_bio, 0);
+	bio_endio(original_bio);
 }
 
 /*!
@@ -858,11 +859,11 @@ void cache_state_machine(struct bittern_cache *bc,
 		printk_err("unknown_cache_state: bc=%p, wi=%p, bio=0x%llx, cache_block=%p\n",
 			   bc, wi, (long long)wi->wi_original_bio, cache_block);
 		if (wi->wi_original_bio != NULL)
-			printk_err("unknown_cache_state: bio_data_dir=0x%lx, bio_bi_sector=%lu\n",
+			printk_err("unknown_cache_state: bio_data_dir=%d, bio_bi_sector=%lu\n",
 				   bio_data_dir(wi->wi_original_bio),
 				   wi->wi_original_bio->bi_iter.bi_sector);
-		printk_err("unknown_cache_state: wi_op_type=%s, wi_op_sector=%lu, wi_op_rw=0x%lx\n",
-			   wi->wi_op_type, wi->wi_op_sector, wi->wi_op_rw);
+		printk_err("unknown_cache_state: wi_op_type=%s, wi_op_sector=%lu, wi_bi_opf=0x%x\n",
+			   wi->wi_op_type, wi->wi_op_sector, wi->wi_bi_opf);
 		printk_err("unknown_cache_state: bcb_sector=%lu, cb_state=%d(%s)\n",
 			   cache_block->bcb_sector,
 			   cache_block->bcb_state,
@@ -1678,41 +1679,31 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 				 wi,
 				 "bypass",
 				 bio->bi_iter.bi_sector,
-				 bio->bi_rw);
+				 bio->bi_opf);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL, "handle_bypass");
 
 	/*
 	 * clone bio
 	 */
-	cloned_bio = bio_clone(bio, GFP_NOIO);
+	cloned_bio = bio_clone_kmalloc(bio, GFP_NOIO);
 	M_ASSERT_FIXME(cloned_bio != NULL);
-	cloned_bio->bi_bdev = bc->devio.dm_dev->bdev;
 	cloned_bio->bi_end_io = cached_dev_bypass_endio;
 	cloned_bio->bi_private = wi;
+	/* set device to cache */
+	bio_set_dev(cloned_bio, bc->bc_cache_dev->bdev);
 	wi->wi_cloned_bio = cloned_bio;
 	if (bio_data_dir(bio) == READ) {
 		atomic_inc(&bc->bc_seq_read.bypass_count);
 		atomic_inc(&bc->bc_pending_read_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
+		bio_set_op_keep_attrs(cloned_bio, REQ_OP_READ);
 	} else {
-#if 0
 		/*
-		 * Turn off issuing of REQ_FUA until hang problem is fixed.
+		 * Given this is a bypass request, the underlying device semantics applies,
+		 * so no need to 
 		 */
-		/*
-		 * Always set REQ_FUA unless disabled.
-		 *
-		 * Bittern gives the same guarantees that HW RAID does, every
-		 * committed write is on stable storage. Sequential access
-		 * bypass is transparent to the caller, so REQ_FUA must be
-		 * set here as well.
-		 */
-		M_ASSERT(bc->bc_enable_req_fua == false ||
-			 bc->bc_enable_req_fua == true);
-		if (bc->bc_enable_req_fua)
-			cloned_bio->bi_rw |= REQ_FUA;
-#endif
+		bio_set_op_keep_attrs(cloned_bio, REQ_OP_WRITE);
 		atomic_inc(&bc->bc_seq_write.bypass_count);
 		atomic_inc(&bc->bc_pending_write_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_writes, tstamp);
@@ -1852,7 +1843,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 					 wi,
 					 "read-hit",
 					 cache_block->bcb_sector,
-					 bio->bi_rw);
+					 bio->bi_opf);
 		cache_handle_read_hit(bc, wi, cache_block, bio);
 	} else if (do_writeback != 0) {
 		ASSERT(bio_data_dir(bio) == WRITE);
@@ -1869,7 +1860,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 					 wi,
 					 "write-hit-wb",
 					 cache_block->bcb_sector,
-					 bio->bi_rw);
+					 bio->bi_opf);
 		cache_handle_write_hit_wb(bc,
 					  wi,
 					  cache_block,
@@ -1890,7 +1881,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 					 wi,
 					 "write-hit-wt",
 					 cache_block->bcb_sector,
-					 bio->bi_rw);
+					 bio->bi_opf);
 		cache_handle_write_hit_wt(bc,
 					  wi,
 					  cache_block,
@@ -2011,7 +2002,7 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 					 wi,
 					 "write-miss",
 					 cache_block->bcb_sector,
-					 bio->bi_rw);
+					 bio->bi_opf);
 		if (is_work_item_mode_writeback(wi))
 			cache_handle_write_miss_wb(bc, wi, bio, cache_block);
 		else
@@ -2024,7 +2015,7 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 					 wi,
 					 "read-miss",
 					 cache_block->bcb_sector,
-					 bio->bi_rw);
+					 bio->bi_opf);
 		cache_handle_read_miss(bc, wi, bio, cache_block);
 	}
 }
@@ -2053,6 +2044,61 @@ void cache_map_workfunc_no_resources(struct bittern_cache *bc,
 	else
 		atomic_inc(&bc->bc_read_misses_busy);
 	queue_to_deferred(bc, &bc->defer_page, bio, old_queue);
+}
+
+int handle_pureflush_or_discard(struct bittern_cache *bc, struct bio *bio)
+{
+	if (bio_is_pureflush_request(bio)) {
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+			 "req-pureflush");
+		bio_endio(bio);
+		return 1;
+	}
+	if (bio_is_discard_request(bio)) {
+		/*
+		 * FIXME: need to do better handling for discard request.
+		 * all valid blocks need to be invalidated,
+		 * and the dirty blocks can be written with zeroes.
+		 */
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+			 "req-discard");
+		/*
+		 * wakeup possible waiters (fixme: is this needed?)
+		 */
+		wakeup_deferred(bc);
+		bio_endio(bio);
+		return 1;
+	}
+	return 0;
+}
+
+void bittern_cache_handle_immediate(const char *name,
+				    struct bittern_cache *bc,
+				    struct bio *bio,
+				    int status)
+{
+	if (status != 0) {
+		/*
+		 * request failed
+		 */
+		BT_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, bio, NULL, name);
+		/*
+		 * wakeup possible waiters (fixme: is this needed?)
+		 */
+		wakeup_deferred(bc);
+		bio->bi_status = status;
+		bio_endio(bio);
+	} else {
+		/*
+		 * always log error, we want to see if the get them
+		 */
+		BT_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, bio, NULL, name);
+		/*
+		 * wakeup possible waiters (fixme: is this needed?)
+		 */
+		wakeup_deferred(bc);
+		bio_endio(bio);
+	}
 }
 
 /*!
@@ -2084,24 +2130,72 @@ int cache_map_workfunc(struct bittern_cache *bc,
 	M_ASSERT(!in_softirq());
 	M_ASSERT(!in_irq());
 
-	if (bio_is_pureflush_request(bio)) {
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
-			 "req-pureflush");
-		bio_endio(bio, 0);
-		return 1;
-	}
-
-	if (bio_is_discard_request(bio)) {
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
-			 "req-discard");
+	switch (bio_op(bio)) {
+        case REQ_OP_READ: /* read sectors from the device */
+		break;
+        case REQ_OP_WRITE: /* write sectors to the device */
 		/*
-		 * wakeup possible waiters
+		 * These two are messy, handle first.
 		 */
-		wakeup_deferred(bc);
-		bio_endio(bio, 0);
+		if (handle_pureflush_or_discard(bc, bio) == 1)
+			return 1;
+		break;
+        case REQ_OP_FLUSH: /*flush the volatile write cache */
+        case REQ_OP_DISCARD: /*discard sectors */
+		/*
+		 * These two are messy, handle first.
+		 */
+		if (handle_pureflush_or_discard(bc, bio) == 1)
+			return 1;
+		BT_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, bio, NULL,
+			 "flush/discard request is not pure", bio_op(bio));
+		panic("flush/discard request is not pure\n");
+		break;
+
+        case REQ_OP_SECURE_ERASE: /* securely erase sectors */
+		/*
+		 * FIXME: need to do better handling for discard request.
+		 * all valid blocks need to be invalidated,
+		 * and the dirty blocks can be written with zeroes.
+		 */
+		bittern_cache_handle_immediate("req-pureflush",
+				    bc,
+				    bio,
+				    BLK_STS_NOTSUPP);
 		return 1;
+        case REQ_OP_WRITE_SAME: /* write the same sector many times */
+		bittern_cache_handle_immediate("req-writesame",
+				    bc,
+				    bio,
+				    BLK_STS_NOTSUPP);
+		return 1;
+        case REQ_OP_WRITE_ZEROES: /* write the zero filled sector many times */
+		bittern_cache_handle_immediate("req-writezeroes",
+				    bc,
+				    bio,
+				    BLK_STS_NOTSUPP);
+		return 1;
+        case REQ_OP_ZONE_REPORT: /* get zone information */
+		bittern_cache_handle_immediate("req-zonereport",
+				    bc,
+				    bio,
+				    BLK_STS_NOTSUPP);
+		return 1;
+        case REQ_OP_ZONE_RESET: /* reset a zone write pointer */
+		bittern_cache_handle_immediate("req-zonereset",
+				    bc,
+				    bio,
+				    BLK_STS_NOTSUPP);
+		return 1;
+	default:
+		BT_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, bio, NULL,
+			 "unknown or supported bio_op=%d", bio_op(bio));
+		panic("unknown or supported bio_op=%d\n", bio_op(bio));
 	}
 
+	/*
+	 * Must be a data request.
+	 */
 	M_ASSERT(bio_is_data_request(bio));
 
 	/*
@@ -2255,11 +2349,11 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 
 	ASSERT_BITTERN_CACHE(bc);
 
-	ASSERT((bio->bi_rw & REQ_WRITE_SAME) == 0);
+	ASSERT(bio_op(bio) != REQ_OP_WRITE_SAME);
 
 	if (bc->error_state != ES_NOERROR) {
 		/* error state, bailout with error */
-		bio_endio(bio, -EIO);
+		bio_io_error(bio);
 		return DM_MAPIO_SUBMITTED;
 	}
 
@@ -2271,7 +2365,7 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 		atomic_inc(&bc->bc_pure_flush_requests);
 	} else {
 		ASSERT(bio_is_data_request(bio));
-		if ((bio->bi_rw & REQ_FLUSH) != 0)
+		if (bio_is_flush_request(bio))
 			atomic_inc(&bc->bc_flush_requests);
 		if (bio_data_dir(bio) == WRITE)
 			atomic_inc(&bc->bc_write_requests);

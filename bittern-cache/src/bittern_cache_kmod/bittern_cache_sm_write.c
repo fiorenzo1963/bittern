@@ -173,7 +173,7 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	 * wakeup possible waiters
 	 */
 	wakeup_deferred(bc);
-	bio_endio(bio, 0);
+	bio_endio(bio);
 }
 
 void sm_clean_write_miss_copy_to_device_start(struct bittern_cache *bc,
@@ -469,7 +469,7 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 
 	work_item_del_pending_io(bc, wi);
 
-	bio_endio(bio, 0);
+	bio_endio(bio);
 
 	/*
 	 * wakeup possible waiters
@@ -841,7 +841,7 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 
 	work_item_del_pending_io(bc, wi);
 
-	bio_endio(bio, 0);
+	bio_endio(bio);
 
 	/*
 	 * wakeup possible waiters

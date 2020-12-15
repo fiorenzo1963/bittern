@@ -1993,8 +1993,6 @@ void bittern_cache_io_hints(struct dm_target *ti, struct queue_limits *lim)
 		    lim->discard_alignment);
 	printk_info("bc=%p: %s: lim->discard_misaligned=%u\n", bc, bc->bc_name,
 		    lim->discard_misaligned);
-	printk_info("bc=%p: %s: lim->discard_zeroes_data=%u\n", bc, bc->bc_name,
-		    lim->discard_zeroes_data);
 	printk_info("bc=%p: %s: lim->logical_block_size=%u\n", bc, bc->bc_name,
 		    lim->logical_block_size);
 	printk_info("bc=%p: %s: lim->physical_block_size=%u\n", bc, bc->bc_name,

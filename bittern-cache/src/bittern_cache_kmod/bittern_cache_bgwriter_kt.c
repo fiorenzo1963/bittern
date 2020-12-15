@@ -17,6 +17,7 @@
 /*! \file */
 
 #include "bittern_cache.h"
+#include "sched/signal.h"
 
 void cache_bgwriter_io_end(struct bittern_cache *bc,
 			   struct work_item *wi,

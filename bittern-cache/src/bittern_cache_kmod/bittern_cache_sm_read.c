@@ -171,7 +171,7 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 	 * wakeup possible waiters
 	 */
 	wakeup_deferred(bc);
-	bio_endio(bio, 0);
+	bio_endio(bio);
 
 	ASSERT_BITTERN_CACHE(bc);
 }
@@ -357,7 +357,7 @@ void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 	 * wakeup possible waiters
 	 */
 	wakeup_deferred(bc);
-	bio_endio(bio, 0);
+	bio_endio(bio);
 
 	ASSERT_BITTERN_CACHE(bc);
 }

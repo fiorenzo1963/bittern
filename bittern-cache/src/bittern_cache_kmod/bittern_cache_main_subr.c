@@ -1144,9 +1144,12 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	}
 
 	if (datadir == WRITE) {
-		bio_set_data_dir_write(bio);
+		/*
+		 * always set REQ_PREFLUSH|REQ_FUA
+		 */
+		bio_set_op_attrs(bio, REQ_OP_WRITE, REQ_PREFLUSH | REQ_FUA);
 	} else {
-		bio_set_data_dir_read(bio);
+		bio_set_op_attrs(bio, REQ_OP_READ, 0);
 	}
 
 	bio->bi_iter.bi_sector = cache_block->bcb_sector;

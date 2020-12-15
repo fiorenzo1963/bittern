@@ -227,13 +227,13 @@ struct work_item {
 	struct pmem_context wi_pmem_ctx;
 	/* transaction id */
 	uint64_t wi_io_xid;
-	/* bypass cache for this workitem */
+	/*! bypass cache for this workitem -- should be bool */
 	int wi_bypass;
+	/*! clone of bi_opf */
+	int wi_bi_opf;
 	/*! keep track here of the request type and block information */
 	const char *wi_op_type;
 	sector_t wi_op_sector;
-	/* bio rw flags */
-	unsigned long wi_op_rw;
 	/* time in workqueue */
 	uint64_t wi_ts_workqueue;
 	/* io start time */

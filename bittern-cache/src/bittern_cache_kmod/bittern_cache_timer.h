@@ -18,6 +18,7 @@
 #define BITTERN_CACHE_TIMER_H
 
 #include <linux/time.h>
+#include <linux/timekeeping.h>
 
 struct cache_timer {
 	spinlock_t bct_spinlock;
@@ -30,7 +31,7 @@ struct cache_timer {
 
 static inline uint64_t current_kernel_time_nsec(void)
 {
-	struct timespec ts = CURRENT_TIME;
+        struct timespec ts = current_kernel_time();
 	return timespec_to_ns(&ts);
 }
 

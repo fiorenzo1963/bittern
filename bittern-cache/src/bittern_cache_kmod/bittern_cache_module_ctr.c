@@ -1276,7 +1276,6 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	/* DISCARD */
 	ti->num_discard_bios = 1;
 	ti->discards_supported = true;
-	ti->discard_zeroes_data_unsupported = true;
 
 #if 0
 	/*
@@ -1295,13 +1294,11 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	printk_info("device: num_discard_bios=%u\n", ti->num_discard_bios);
 	printk_info("device: num_write_same_bios=%u\n",
 		    ti->num_write_same_bios);
-	printk_info("device: per_bio_data_size=%u\n", ti->per_bio_data_size);
+	printk_info("device: per_io_data_size=%u\n", ti->per_io_data_size);
 	printk_info("device: num_write_bios()=%p\n", ti->num_write_bios);
 	printk_info("device: flush_supported=%u\n", ti->flush_supported);
 	printk_info("device: discards_supported=%u\n", ti->discards_supported);
 	printk_info("device: split_discard_bios=%u\n", ti->split_discard_bios);
-	printk_info("device: discard_zeroes_data_unsupported=%u\n",
-		    ti->discard_zeroes_data_unsupported);
 
 	ti->private = bc;
 
